@@ -1,0 +1,91 @@
+const PBotAPI = Java.type('haven.purus.pbot.PBotAPI');
+const ui = PBotAPI.ui();
+const PBotUtils = Java.type('haven.purus.pbot.PBotUtils');
+
+let foodData = [];
+
+// Load food data from the specified file
+function loadFoodData() {
+    const filePath = "C:/Users/Oblon/Desktop/food_items.txt"; // Replace with your path
+    try {
+        const lines = PBotUtils.readFile(filePath);
+        for (let line of lines) {
+            foodData.push(FoodItem.fromJson(line)); // Parse JSON
+        }
+    } catch (e) {
+        PBotUtils.sysMsg(ui, "Error loading food data: " + String(e));
+    }
+}
+
+// Display food data in a table format
+function displayFoodData() {
+    const foodTable = foodData.map(food => [
+        food.icon,
+        food.name,
+        food.strength,
+        food.agility,
+        food.intelligence,
+        food.constitution,
+        food.perception,
+        food.charisma,
+        food.dexterity,
+        food.psych,
+        food.ingredients.join(", "),
+        food.fepPerHunger,
+        food.totalFep,
+        food.hunger,
+        food.energy
+    ]);
+    renderFoodTable(foodTable);
+}
+
+// Render the food data table in the game window
+function renderFoodTable(data) {
+    // Use a utility method to create a window, if available
+    const window = PBotUtils.createWindow("Food Data", 600, 400); // Adjust this line to your context
+
+    // Create a table model
+    const tableModel = new javax.swing.table.DefaultTableModel();
+    const columns = [
+        "Icon", "Name", "Strength", "Agility", "Intelligence",
+        "Constitution", "Perception", "Charisma", "Dexterity",
+        "Psych", "Ingredients", "FEP/Hunger", "Total FEP",
+        "Hunger", "Energy"
+    ];
+
+    tableModel.setColumnIdentifiers(columns);
+
+    for (let row of data) {
+        tableModel.addRow(row);
+    }
+
+    // Create the JTable
+    const table = new javax.swing.JTable(tableModel);
+    table.setFillsViewportHeight(true);
+
+    // Create and set up the scroll pane
+    const scrollPane = new javax.swing.JScrollPane(table);
+
+    // Create a JPanel and add the scroll pane
+    const panel = new javax.swing.JPanel();
+    panel.setLayout(new java.awt.BorderLayout());
+    panel.add(scrollPane, java.awt.BorderLayout.CENTER);
+
+    // Set the panel as the content of the window
+    window.setContentPane(panel);
+
+    // Pack and display the window
+    window.pack();
+    window.setVisible(true);
+}
+
+// Define the FoodItem structure
+const FoodItem = {
+    fromJson: function(json) {
+        return JSON.parse(json); // Replace with appropriate parsing logic
+    }
+};
+
+// Initialize the script
+loadFoodData();
+displayFoodData();
