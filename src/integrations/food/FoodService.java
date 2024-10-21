@@ -30,14 +30,14 @@ public class FoodService {
     private static final String PROJECT_PATH = System.getProperty("user.dir") + "/FoodData/";  // Project directory path
     private static final File FOOD_DATA_CACHE_FILE = new File(PROJECT_PATH + "food_data.json");
 
-    static {
-        if (!Resource.language.equals("en")) {
-            System.out.println("FoodUtil ERROR: Only English language is allowed to send food data");
-        }
-        scheduler.execute(FoodService::checkFood);
-        scheduler.scheduleAtFixedRate(FoodService::saveFoodDataToFile, 10L, 10, TimeUnit.SECONDS);
-        scheduler.scheduleAtFixedRate(FoodService::runPythonScript, 0L, 30, TimeUnit.MINUTES);
-    }
+   /// static {
+      ///  if (!Resource.language.equals("en")) {
+            ///System.out.println("FoodUtil ERROR: Only English language is allowed to send food data");
+       /// }
+      ///  scheduler.execute(FoodService::checkFood);
+       /// scheduler.scheduleAtFixedRate(FoodService::saveFoodDataToFile, 10L, 10, TimeUnit.SECONDS);
+       /// scheduler.scheduleAtFixedRate(FoodService::runPythonScript, 0L, 30, TimeUnit.MINUTES);
+    ///}
 
     /**
      * Check item info and determine if it is food and we need to send it
