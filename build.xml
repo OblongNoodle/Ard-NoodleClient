@@ -64,6 +64,7 @@
                 <pathelement path="lib/tregex.jar"/>
                 <pathelement path="lib/truffle-api.jar"/>
                 <pathelement path="lib/py4j-0.10.9.2.jar"/>
+                <pathelement path="lib/commons-net-3.11.1.jar"/>
 
                 <pathelement path="lib/abcl.jar"/>
                 <pathelement path="lib/luaj-jse-3.0.2.jar"/>
@@ -106,7 +107,7 @@
             <manifest>
                 <attribute name="Main-Class" value="haven.MainFrame"/>
                 <attribute name="Class-Path" value="jogl.jar gluegen-rt.jar amber-res.jar custom-res.jar l10n.jar HavenDiscord.jar rxjava-1.1.5.jar rxjava-1.1.5-javadoc.jar sqlite-jdbc-3.40.0.0.jar flogger-0.3.1.jar flogger-system-backend-0.3.1.jar
-jackson-core.jar graal-sdk.jar graaljs.jar tregex.jar truffle-api.jar luaj-jse-3.0.2.jar abcl.jar abcl-contrib.jar javacord-api-3.0.4.jar javacord-core-3.0.4.jar py4j-0.10.9.2.jar steamworks4j.jar"/>
+jackson-core.jar graal-sdk.jar graaljs.jar tregex.jar truffle-api.jar luaj-jse-3.0.2.jar abcl.jar abcl-contrib.jar javacord-api-3.0.4.jar javacord-core-3.0.4.jar py4j-0.10.9.2.jar steamworks4j.jar commons-net-3.11.1.jar"/>
             </manifest>
         </jar>
         <chmod file="build/hafen.jar" perm="a+x"/>
