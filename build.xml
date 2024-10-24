@@ -1,8 +1,12 @@
 ﻿<?xml version="1.0" ?>
 
 <project name="hafen" default="deftgt">
+    <property name="java8.home" value="C:\Program Files\Java\jdk-1.8"/>
+    <property name="ant.build.javac.source" value="1.8"/>
+    <property name="ant.build.javac.target" value="1.8"/>
     <property name="name" value="ArdClient"/>
     <property name="version" value="2024.06.08"/>
+
 
     <target name="build-env">
         <mkdir dir="build"/>
@@ -48,7 +52,9 @@
 
     <target name="hafen-client" depends="build-env">
         <javac srcdir="src" destdir="build/classes" debug="on"
-               source="1.8" target="1.8" includeantruntime="no" encoding="UTF-8" bootclasspath="${boot-classpath}">
+               source="1.8" target="1.8" includeantruntime="no" encoding="UTF-8"
+               bootclasspath="${boot-classpath}"
+               fork="true" executable="${java8.home}/bin/javac">
             <classpath>
                 <pathelement path="lib/jogl.jar"/>
                 <pathelement path="lib/gluegen-rt.jar"/>
