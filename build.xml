@@ -1,18 +1,14 @@
 ﻿<?xml version="1.0" ?>
 
 <project name="hafen" default="deftgt">
-    <property name="java8.home" value="C:\Program Files\Java\jdk-1.8"/>
-    <property name="ant.build.javac.source" value="1.8"/>
-    <property name="ant.build.javac.target" value="1.8"/>
     <property name="name" value="ArdClient"/>
     <property name="version" value="2024.06.08"/>
 
-
     <target name="build-env">
         <mkdir dir="build"/>
-<!--        <mkdir dir="build/lib"/>-->
+        <!--        <mkdir dir="build/lib"/>-->
         <mkdir dir="build/classes"/>
-<!--        <available property="has-res-jar" file="build/hafen-res.jar"/>-->
+        <!--        <available property="has-res-jar" file="build/hafen-res.jar"/>-->
         <available property="has-buildinfo" file="build/classes/buildinfo"/>
         <available property="unpacked-lib" file="build/classes-lib"/>
     </target>
@@ -52,9 +48,7 @@
 
     <target name="hafen-client" depends="build-env">
         <javac srcdir="src" destdir="build/classes" debug="on"
-               source="1.8" target="1.8" includeantruntime="no" encoding="UTF-8"
-               bootclasspath="${boot-classpath}"
-               fork="true" executable="${java8.home}/bin/javac">
+               source="1.8" target="1.8" includeantruntime="no" encoding="UTF-8" bootclasspath="${boot-classpath}">
             <classpath>
                 <pathelement path="lib/jogl.jar"/>
                 <pathelement path="lib/gluegen-rt.jar"/>
@@ -93,7 +87,7 @@
         <copy todir="build/classes/haven" file="etc/res-preload"/>
         <copy todir="build/classes/haven" file="etc/res-bgload"/>
         <copy todir="build/classes/haven" file="etc/icon.png"/>
-<!--        <copy todir="build" file="etc/grid_ids.txt"/>-->
+        <!--        <copy todir="build" file="etc/grid_ids.txt"/>-->
         <copy todir="build" file="CHANGELOG.txt"/>
         <copy todir="build" file="lib/static.sqlite"/>
     </target>
@@ -142,7 +136,7 @@ jackson-core.jar graal-sdk.jar graaljs.jar tregex.jar truffle-api.jar luaj-jse-3
 
     <target name="l10n-jar" depends="build-env">
         <jar destfile="build/l10n.jar">
-<!--            <fileset dir="." includes="l10n/*.properties" excludes="l10n/*_new.properties"/>-->
+            <!--            <fileset dir="." includes="l10n/*.properties" excludes="l10n/*_new.properties"/>-->
             <fileset dir="." includes="l10n/*/*.json"/>
         </jar>
     </target>
@@ -229,7 +223,7 @@ jackson-core.jar graal-sdk.jar graaljs.jar tregex.jar truffle-api.jar luaj-jse-3
     <target name="dist" depends="rebuild">
         <zip destfile="${basedir}/${name}-${version}.zip" update="false">
             <fileset dir="build" includes="*.jar" excludes="*natives*.jar"/>
-<!--            <fileset dir="build" includes="grid_ids.txt"/>-->
+            <!--            <fileset dir="build" includes="grid_ids.txt"/>-->
             <fileset dir="${basedir}" includes="README, CHANGELOG.txt"/>
             <fileset dir="lib/jogl-natives" includes="*.jar"/>
             <fileset dir="lib/steamworks" includes="*.jar"/>
@@ -237,7 +231,7 @@ jackson-core.jar graal-sdk.jar graaljs.jar tregex.jar truffle-api.jar luaj-jse-3
         </zip>
         <zip destfile="${basedir}/${name}-${version}-upd.zip" update="false">
             <fileset dir="build" includes="amber-res.jar, hafen.jar, l10n.jar"/>
-<!--            <fileset dir="build" includes="grid_ids.txt"/>-->
+            <!--            <fileset dir="build" includes="grid_ids.txt"/>-->
             <fileset dir="${basedir}" includes="CHANGELOG.txt"/>
         </zip>
     </target>
@@ -252,7 +246,7 @@ jackson-core.jar graal-sdk.jar graaljs.jar tregex.jar truffle-api.jar luaj-jse-3
         <zip destfile="D:\GithubFolder\Ardenneslol.github.io\Hafen\ArdClient.rar" update="true">
             <fileset dir="build" includes="*.jar,*.bat, CHANGELOG.txt, static.sqlite"
                      excludes="chatlog.txt, *.log, *.dat"/>
-<!--            <fileset dir="build" includes="grid_ids.txt"/>-->
+            <!--            <fileset dir="build" includes="grid_ids.txt"/>-->
         </zip>
         <copy todir="D:\GithubFolder\Ardenneslol.github.io\Hafen">
             <fileset dir="build" includes="amber-res.jar, hafen.jar, l10n.jar"/>
@@ -350,7 +344,7 @@ jackson-core.jar graal-sdk.jar graaljs.jar tregex.jar truffle-api.jar luaj-jse-3
             <fileset dir="build">
                 <include name="logging.properties"/>
                 <include name="static.sqlite"/>
-<!--                <include name="grid_ids.txt"/>-->
+                <!--                <include name="grid_ids.txt"/>-->
             </fileset>
             <fileset dir="build/classes">
                 <include name="CHANGELOG.txt"/>
