@@ -1,0 +1,68 @@
+const PBotAPI = Java.type('haven.purus.pbot.PBotAPI');
+const ui = PBotAPI.ui();
+const PBotUtils = Java.type('haven.purus.pbot.PBotUtils');
+const window = PBotUtils.PBotWindow(ui, "Gem Marker", 70, 200, ScriptID);
+
+let stop = false;
+
+window.addButton("btnStart", "Start Marking", 180, 10, 10);
+window.addButton("btnStop", "Stop", 180, 10, 40);
+
+function shouldStop() {
+    if (stop) PBotUtils.sysMsg(ui, "Stop!");
+    if (window.closed()) PBotUtils.sysMsg(ui, "Window closed!");
+    return stop || window.closed();
+}
+
+const btnStop = () => {
+    stop = true;
+    PBotUtils.stop();
+};
+
+const btnStart = () => {
+    try {
+        stop = false;
+        // Track the last inventory state we checked
+        let lastCheck = new Set();
+
+        while (!shouldStop()) {
+            const playerInv = PBotUtils.playerInventory(ui);
+            const gems = playerInv.getInventoryItemsByResnames("gfx/invobjs/gems/gemstone");
+
+            // Get current inventory state
+            let currentCheck = new Set();
+
+            for (let i = 0; i < gems.size(); i++) {
+                const gem = gems[i];
+                const name = gem.getName();
+                const quality = gem.getQuality();
+                const invLoc = gem.getInvLoc();
+
+                // Create a unique identifier for this gem instance
+                const gemId = `${name}-${quality}-${invLoc.x},${invLoc.y}`;
+                currentCheck.add(gemId);
+
+                // If this gem wasn't in our last check, it's new
+                if (!lastCheck.has(gemId)) {
+                    const player = PBotUtils.player(ui);
+                    const fullName = `${name} Q${quality.toFixed(1)}`;
+
+                    ui.gui.mapfile.markobj(
+                        player.id,
+                        player,
+                        fullName
+                    );
+
+                    PBotUtils.sysMsg(ui, "Marked new gem: " + fullName);
+                }
+            }
+
+            // Update last known state
+            lastCheck = currentCheck;
+
+            PBotUtils.sleep(1000);
+        }
+    } catch (e) {
+        PBotUtils.sysMsg(ui, "Error: " + e);
+    }
+};

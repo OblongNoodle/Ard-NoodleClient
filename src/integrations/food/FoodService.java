@@ -1,338 +1,244 @@
 package integrations.food;
 
-import haven.Defer;
 import haven.ItemInfo;
 import haven.Resource;
-import haven.Utils;
 import haven.res.ui.tt.q.qbuff.QBuff;
 import haven.resutil.FoodInfo;
 import org.json.JSONArray;
 import org.json.JSONObject;
-
-import java.io.BufferedReader;
-import java.io.File;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.OutputStream;
-import java.math.BigInteger;
+import java.awt.image.BufferedImage;
+import java.io.*;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.StandardOpenOption;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Queue;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
-import java.util.zip.GZIPInputStream;
 
 public class FoodService {
-    private static final String DEFAULT_SERVICE_URL = "https://food.cediner.tech/";
-    public static final String API_ENDPOINT = Utils.getpref("food_service_endpoint_api", DEFAULT_SERVICE_URL + "api/");
-    private static final String FOOD_DATA_URL = Utils.getpref("food_service_data_url", DEFAULT_SERVICE_URL + "api/data/food-info.json");
-    private static final File FOOD_DATA_CACHE_FILE = new File("food_data.json");
-    private static String token = "ardClient";  //Config.confid maybe ArdClient also works
-
-    private static final Map<String, ParsedFoodInfo> cachedItems = new ConcurrentHashMap<>();
-    private static final Queue<HashedFoodInfo> sendQueue = new ConcurrentLinkedQueue<>();
-    public static final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(2);
-
-    static {
-        if (!Resource.language.equals("en")) {
-            System.out.println("FoodUtil ERROR: Only English language is allowed to send food data");
-        }
-        scheduler.execute(FoodService::loadCachedFoodData);
-        scheduler.scheduleAtFixedRate(FoodService::sendItems, 10L, 10, TimeUnit.SECONDS);
-        //scheduler.scheduleAtFixedRate(FoodService::requestFoodDataCache, 0L, 30, TimeUnit.MINUTES);
-    }
-
-    /**
-     * Load cached food data from the file (only keys for now since we don't use content anyway)
-     */
-    private static void loadCachedFoodData() {
-        try {
-            if (FOOD_DATA_CACHE_FILE.exists()) {
-                Files.delete(FOOD_DATA_CACHE_FILE.toPath());
-                /*String jsonData = String.join("", Files.readAllLines(FOOD_DATA_CACHE_FILE.toPath(), StandardCharsets.UTF_8));
-                JSONObject object = new JSONObject(jsonData);
-                object.keySet().forEach(key -> cachedItems.put(key, new ParsedFoodInfo()));
-                System.out.println("Loaded food data file: " + cachedItems.size() + " entries");*/
-            }
-        } catch (Exception ex) {
-            System.err.println("Cannot load food data file: " + ex.getMessage());
-            try {
-                Files.delete(FOOD_DATA_CACHE_FILE.toPath());
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
-        }
-    }
-
-    private static double lastModified = -1;
-    /**
-     * Check last modified for the food_data file and request update from server if too old
-     */
-    public static void requestFoodDataCache() {
-        try {
-            /*if (FOOD_DATA_CACHE_FILE.exists()) {
-                lastModified = FOOD_DATA_CACHE_FILE.lastModified();
-            }*/
-            if (lastModified == -1 || (Utils.rtime() - lastModified > 30 * 60)) {//30 * 60 sec
-                lastModified = Utils.rtime();//seconds time
-                try {
-                    HttpURLConnection connection = (HttpURLConnection) new URL(FOOD_DATA_URL).openConnection();
-                    connection.setRequestProperty("Accept-Encoding", "gzip");
-                    connection.setRequestProperty("User-Agent", "H&H Client/" + token);
-                    connection.setRequestProperty("Cache-Control", "no-cache");
-                    StringBuilder stringBuilder = new StringBuilder();
-                    try (BufferedReader reader = new BufferedReader(new InputStreamReader(new GZIPInputStream(connection.getInputStream())))) {
-                        stringBuilder.append(reader.readLine());
-                    } finally {
-                        connection.disconnect();
-                    }
-                    String content = stringBuilder.toString();
-
-                    /*Files.write(FOOD_DATA_CACHE_FILE.toPath(), Collections.singleton(content), StandardCharsets.UTF_8, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.CREATE);*/
-                    JSONObject object = new JSONObject(content);
-                    //object.keySet().forEach(key -> cachedItems.put(key, new ParsedFoodInfo()));
-                    //System.out.println("Updated food data file: " + cachedItems.size() + " entries");
-                } catch (Exception ex) {
-                    System.err.println("Cannot load remote food data file: " + ex.getMessage());
-                }
-            }
-        } catch (Exception ex) {
-            System.out.println("Should not happen, but whatever: " + ex.getMessage());
-        }
-    }
+    public static final String API_ENDPOINT = "https://havengoons.com/food/";
+    public static final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
 
     /**
      * Check item info and determine if it is food and we need to send it
      */
     public static void checkFood(List<ItemInfo> ii, Resource res) {
-//        if (!Resource.language.equals("en")) {
-//            // Do not process localized items
-//            return;
-//        }
+        if (!Resource.language.equals("en")) {
+            return;
+        }
         List<ItemInfo> infoList = new ArrayList<>(ii);
-        Defer.later(() -> {
+        new Thread(() -> {
             try {
                 String resName = res.name;
                 FoodInfo foodInfo = ItemInfo.find(FoodInfo.class, infoList);
                 if (foodInfo != null) {
+                    // Try to get and process icon
+                    try {
+                        if (res != null) {
+                            Resource.Image img = res.layer(Resource.imgc);
+                            if (img != null) {
+                                BufferedImage rawImage = img.img;  // Use the raw image directly
+                                IconService.checkIcon(infoList, rawImage, res);
+                            }
+                        }
+                    } catch (Exception e) {
+                        System.err.println("Error checking icon: " + e.getMessage());
+                    }
+
                     QBuff qBuff = ItemInfo.find(QBuff.class, infoList);
                     double quality = qBuff != null ? qBuff.q : 10.0;
                     double multiplier = Math.sqrt(quality / 10.0);
-                    double multiplier2 = Math.sqrt(multiplier);
 
                     ParsedFoodInfo parsedFoodInfo = new ParsedFoodInfo();
-                    parsedFoodInfo.resourceName = resName;
-                    parsedFoodInfo.energy = (int) (Math.round(foodInfo.end * 100));
-                    parsedFoodInfo.hunger = round2Dig(foodInfo.glut * 1000 / multiplier2);
+                    parsedFoodInfo.setResourceName(resName);
+                    parsedFoodInfo.setEnergy((int) Math.round(foodInfo.end * 100));
+                    parsedFoodInfo.setHunger(Math.round(foodInfo.glut * 10000.0) / 100.0);
 
                     for (int i = 0; i < foodInfo.evs.length; i++) {
-                        parsedFoodInfo.feps.add(new FoodFEP(foodInfo.evs[i].ev.orignm, round2Dig(foodInfo.evs[i].a / multiplier)));
+                        parsedFoodInfo.getFeps().add(new FoodFEP(foodInfo.evs[i].ev.orignm, round2Dig(foodInfo.evs[i].a / multiplier)));
                     }
 
                     for (ItemInfo info : infoList) {
                         if (info instanceof ItemInfo.AdHoc) {
                             String text = ((ItemInfo.AdHoc) info).str.text;
-                            // Skip food which base FEP's cannot be calculated
-                            if (text.equals("White-truffled")
-                                    || text.equals("Black-truffled")
-                                    || text.equals("Peppered")) {
-                                return (null);
+                            if (text.equals("White-truffled") || text.equals("Black-truffled") || text.equals("Peppered")) {
+                                return;
                             }
                         }
                         if (info instanceof ItemInfo.Name) {
-                            parsedFoodInfo.itemName = ((ItemInfo.Name) info).ostr.text;
+                            parsedFoodInfo.setItemName(((ItemInfo.Name) info).ostr.text);
                         }
-                        if (info.getClass().getName().equals("Ingredient")) {
+                        if (info.getClass().getName().equals("Ingredient") || info.getClass().getName().equals("Smoke")) {
                             String name = (String) info.getClass().getField("oname").get(info);
                             Double value = (Double) info.getClass().getField("val").get(info);
-                            parsedFoodInfo.ingredients.add(new FoodIngredient(name, (int) (value * 100)));
-                        } else if (info.getClass().getName().equals("Smoke")) {
-                            String name = (String) info.getClass().getField("oname").get(info);
-                            Double value = (Double) info.getClass().getField("val").get(info);
-                            parsedFoodInfo.ingredients.add(new FoodIngredient(name, (int) (value * 100)));
+                            parsedFoodInfo.getIngredients().add(new FoodIngredient(name, (int) (value * 100)));
                         }
                     }
 
-                    checkAndSend(parsedFoodInfo);
+                    // Send parsed food information
+                    sendFoodData(parsedFoodInfo);
                 }
             } catch (Exception ex) {
                 System.out.println("Cannot create food info: " + ex.getMessage());
             }
-            return (null);
-        });
+        }).start();
     }
 
     private static double round2Dig(double value) {
         return Math.round(value * 100.0) / 100.0;
     }
 
-    private static void checkAndSend(ParsedFoodInfo info) {
-        String hash = generateHash(info);
-        if (cachedItems.containsKey(hash)) {
-            return;
-        }
-        sendQueue.add(new HashedFoodInfo(hash, info));
-    }
-
-    private static void sendItems() {
-        if (sendQueue.isEmpty()) {
-            return;
-        }
-
-        List<ParsedFoodInfo> toSend = new ArrayList<>();
-        while (!sendQueue.isEmpty()) {
-            HashedFoodInfo info = sendQueue.poll();
-            if (cachedItems.containsKey(info.hash)) {
-                continue;
-            }
-            cachedItems.put(info.hash, info.foodInfo);
-            toSend.add(info.foodInfo);
-        }
-
-        if (!toSend.isEmpty()) {
-            try {
-                HttpURLConnection connection = (HttpURLConnection) new URL(API_ENDPOINT + "food").openConnection();
-                connection.setRequestMethod("POST");
-                connection.setRequestProperty("Content-Type", "application/json");
-                connection.setRequestProperty("User-Agent", "H&H Client/" + token);
-                connection.setDoOutput(true);
-                try (OutputStream out = connection.getOutputStream()) {
-                    out.write(new JSONArray(toSend.toArray()).toString().getBytes(StandardCharsets.UTF_8));
-                }
-                StringBuilder stringBuilder = new StringBuilder();
-                try (BufferedReader inputStream = new BufferedReader(new InputStreamReader(connection.getInputStream()))) {
-                    stringBuilder.append(inputStream.readLine());
-                }
-
-                int code = connection.getResponseCode();
-                if (code != 200) {
-                    System.out.println("Response: " + stringBuilder.toString());
-                }
-                System.out.println("Sent " + toSend.size() + " food items, code: " + code);
-            } catch (Exception ex) {
-                System.out.println("Cannot send " + toSend.size() + " food items, error: " + ex.getMessage());
-            }
-        }
-    }
-
-    private static String generateHash(ParsedFoodInfo foodInfo) {
+    public static void sendFoodData(ParsedFoodInfo parsedFoodInfo) {
         try {
-            StringBuilder stringBuilder = new StringBuilder();
-            stringBuilder.append(foodInfo.itemName).append(";")
-                    .append(foodInfo.resourceName).append(";");
-            foodInfo.ingredients.forEach(it -> {
-                stringBuilder.append(it.name).append(";").append(it.percentage).append(";");
-            });
+            // Create JSON object for this food item
+            JSONObject jsonObject = new JSONObject();
+            jsonObject.put("itemName", parsedFoodInfo.getItemName());
+            jsonObject.put("resourceName", parsedFoodInfo.getResourceName());
+            jsonObject.put("energy", parsedFoodInfo.getEnergy());
+            jsonObject.put("hunger", parsedFoodInfo.getHunger());
 
-            MessageDigest digest = MessageDigest.getInstance("MD5");
-            byte[] hash = digest.digest(stringBuilder.toString().getBytes(StandardCharsets.UTF_8));
-            return getHex(hash);
-        } catch (NoSuchAlgorithmException e) {
-            System.out.println("Cannot generate food hash");
+            JSONArray ingredientsArray = new JSONArray();
+            for (FoodIngredient ingredient : parsedFoodInfo.getIngredients()) {
+                JSONObject ingredientObject = new JSONObject();
+                ingredientObject.put("name", ingredient.getName());
+                ingredientObject.put("percentage", ingredient.getPercentage());
+                ingredientsArray.put(ingredientObject);
+            }
+            jsonObject.put("ingredients", ingredientsArray);
+
+            JSONArray fepsArray = new JSONArray();
+            for (FoodFEP fep : parsedFoodInfo.getFeps()) {
+                JSONObject fepObject = new JSONObject();
+                fepObject.put("name", fep.getName());
+                fepObject.put("value", fep.getValue());
+                fepsArray.put(fepObject);
+            }
+            jsonObject.put("feps", fepsArray);
+
+            // Send single food item to server
+            URL url = new URL(API_ENDPOINT + "uploadfromclient.php");
+            HttpURLConnection httpConn = (HttpURLConnection) url.openConnection();
+            httpConn.setRequestMethod("POST");
+            httpConn.setRequestProperty("Content-Type", "application/json");
+            httpConn.setDoOutput(true);
+
+            try (OutputStream os = httpConn.getOutputStream()) {
+                byte[] input = jsonObject.toString(4).getBytes(StandardCharsets.UTF_8);
+                os.write(input, 0, input.length);
+            }
+
+            int responseCode = httpConn.getResponseCode();
+            if (responseCode == HttpURLConnection.HTTP_OK) {
+                System.out.println("Food data uploaded successfully.");
+                try (BufferedReader br = new BufferedReader(
+                        new InputStreamReader(httpConn.getInputStream(), StandardCharsets.UTF_8))) {
+                    StringBuilder response = new StringBuilder();
+                    String responseLine;
+                    while ((responseLine = br.readLine()) != null) {
+                        response.append(responseLine.trim());
+                    }
+                    System.out.println("Server response: " + response.toString());
+                }
+            } else {
+                System.out.println("Failed to upload food data. HTTP response code: " + responseCode);
+            }
+        } catch (Exception e) {
+            System.err.println("Error processing food data: " + e.getMessage());
+            e.printStackTrace();
         }
-        return null;
     }
 
-    private static String getHex(byte[] bytes) {
-        BigInteger bigInteger = new BigInteger(1, bytes);
-        return bigInteger.toString(16);
+    private static boolean isDuplicate(ParsedFoodInfo parsedFoodInfo, JSONArray jsonArray) {
+        for (int i = 0; i < jsonArray.length(); i++) {
+            JSONObject existingItem = jsonArray.getJSONObject(i);
+            String existingItemName = existingItem.getString("itemName");
+            JSONArray existingIngredients = existingItem.getJSONArray("ingredients");
+
+            // Check if the item name matches
+            if (existingItemName.equals(parsedFoodInfo.getItemName())) {
+                // Check if the ingredients match
+                if (existingIngredients.length() == parsedFoodInfo.getIngredients().size()) {
+                    boolean allMatch = true;
+                    for (int j = 0; j < existingIngredients.length(); j++) {
+                        JSONObject existingIngredient = existingIngredients.getJSONObject(j);
+                        String existingIngredientName = existingIngredient.getString("name");
+                        int existingIngredientPercentage = existingIngredient.getInt("percentage");
+
+                        FoodIngredient newIngredient = parsedFoodInfo.getIngredients().get(j);
+                        if (!existingIngredientName.equals(newIngredient.getName()) ||
+                                existingIngredientPercentage != newIngredient.getPercentage()) {
+                            allMatch = false;
+                            break;
+                        }
+                    }
+                    if (allMatch) {
+                        return true; // Duplicate found
+                    }
+                }
+            }
+        }
+        return false; // No duplicates found
     }
 
-    private static class HashedFoodInfo {
-        public String hash;
-        public ParsedFoodInfo foodInfo;
+    public static class FoodFEP {
+        private String name;
+        private double value;
 
-        public HashedFoodInfo(String hash, ParsedFoodInfo foodInfo) {
-            this.hash = hash;
-            this.foodInfo = foodInfo;
+        public FoodFEP(String name, double value) {
+            this.name = name;
+            this.value = value;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public double getValue() {
+            return value;
         }
     }
 
     public static class FoodIngredient {
         private String name;
-        private Integer percentage;
+        private int percentage;
 
-        public FoodIngredient(String name, Integer percentage) {
+        public FoodIngredient(String name, int percentage) {
             this.name = name;
             this.percentage = percentage;
         }
 
-        @Override
-        public int hashCode() {
-            return Objects.hash(name, percentage);
+        public String getName() {
+            return name;
         }
 
-        public Integer getPercentage() {
+        public int getPercentage() {
             return percentage;
-        }
-
-        public String getName() {
-            return name;
-        }
-    }
-
-    public static class FoodFEP {
-        private String name;
-        private Double value;
-
-        public FoodFEP(String name, Double value) {
-            this.name = name;
-            this.value = value;
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(name, value);
-        }
-
-        public String getName() {
-            return name;
-        }
-
-        public Double getValue() {
-            return value;
         }
     }
 
     public static class ParsedFoodInfo {
-        public String itemName;
-        public String resourceName;
-        public Integer energy;
-        public double hunger;
-        public ArrayList<FoodIngredient> ingredients;
-        public ArrayList<FoodFEP> feps;
+        private String itemName;
+        private String resourceName;
+        private int energy;
+        private double hunger;
+        private final List<FoodFEP> feps = new ArrayList<>();
+        private final List<FoodIngredient> ingredients = new ArrayList<>();
 
-        public ParsedFoodInfo() {
-            this.itemName = "";
-            this.resourceName = "";
-            this.ingredients = new ArrayList<>();
-            this.feps = new ArrayList<>();
+        public void setItemName(String itemName) {
+            this.itemName = itemName;
         }
 
-        @Override
-        public int hashCode() {
-            return Objects.hash(itemName, resourceName, ingredients);
+        public void setResourceName(String resourceName) {
+            this.resourceName = resourceName;
         }
 
-        public ArrayList<FoodFEP> getFeps() {
-            return feps;
+        public void setEnergy(int energy) {
+            this.energy = energy;
         }
 
-        public ArrayList<FoodIngredient> getIngredients() {
-            return ingredients;
+        public void setHunger(double hunger) {
+            this.hunger = hunger;
         }
 
         public String getItemName() {
@@ -343,12 +249,20 @@ public class FoodService {
             return resourceName;
         }
 
+        public int getEnergy() {
+            return energy;
+        }
+
         public double getHunger() {
             return hunger;
         }
 
-        public Integer getEnergy() {
-            return energy;
+        public List<FoodFEP> getFeps() {
+            return feps;
+        }
+
+        public List<FoodIngredient> getIngredients() {
+            return ingredients;
         }
     }
 }

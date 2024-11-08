@@ -1,9 +1,8 @@
 package integrations.food;
 
-import haven.GSprite;
 import haven.ItemInfo;
+import haven.Resource;
 import haven.resutil.FoodInfo;
-import org.json.JSONArray;
 import org.json.JSONObject;
 
 import javax.imageio.ImageIO;
@@ -17,85 +16,121 @@ import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Scanner;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.TimeUnit;
+import java.util.logging.Logger;
+import java.util.logging.Level;
 
 public class IconService {
+    private static final Logger LOGGER = Logger.getLogger(IconService.class.getName());
+    private static final HashSet<String> sentIcons = new HashSet<>();
+    private static final ConcurrentLinkedQueue<IconUpload> uploadQueue = new ConcurrentLinkedQueue<>();
 
-    private static HashSet<String> sentIcons = new HashSet<>();
-
+    // Static initializer - this runs when the class is loaded
     static {
-        //getSentIcons();
+        FoodService.scheduler.scheduleAtFixedRate(IconService::processUploadQueue, 10L, 10L, TimeUnit.SECONDS);
     }
 
-    public static void getSentIcons() {
-        try {
-            HttpURLConnection conn = (HttpURLConnection) new URL(FoodService.API_ENDPOINT + "data/icons.json").openConnection();
-            conn.setRequestProperty("User-Agent", "H&H Client");
-            conn.setRequestProperty("Cache-Control", "no-cache");
-            Scanner scan = new Scanner(conn.getInputStream());
-            StringBuilder sb = new StringBuilder();
-            while (scan.hasNextLine())
-                sb.append(scan.nextLine());
-            JSONArray arr = new JSONArray(sb.toString());
-            arr.forEach((s) -> sentIcons.add(s.toString()));
-        } catch (IOException e) {
-            e.printStackTrace();
+    public static void checkIcon(List<ItemInfo> infos, BufferedImage image, Resource res) {
+        if (!Resource.language.equals("en")) {
+            return;
         }
-    }
 
-    public static void checkIcon(List<ItemInfo> infos, GSprite sprite) {
         try {
-            if (ItemInfo.find(FoodInfo.class, infos) == null)
+            // Check if it's a food item
+            FoodInfo foodInfo = ItemInfo.find(FoodInfo.class, infos);
+            if (foodInfo == null) {
                 return;
+            }
+
             String name = null;
+            String resourceName = null;
+
+            // Get food name
             for (ItemInfo info : infos) {
                 if (info instanceof ItemInfo.Name) {
                     name = ((ItemInfo.Name) info).str.text;
+                    break;
                 }
             }
-            if (name != null && !sentIcons.contains(name)) {
-                try {
-                    BufferedImage img = ((GSprite.ImageSprite) sprite).image();
-                    if (img != null)
-                        sendIcon(name, img);
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }
+
+            // Get resource name
+            if (res != null) {
+                resourceName = res.name;
+            }
+
+            // If we have both name and resource name and haven't sent this icon before
+            if (name != null && resourceName != null && !sentIcons.contains(name) && image != null) {
+                queueIconUpload(name, resourceName, image);
                 sentIcons.add(name);
+                LOGGER.info("Queued new icon for upload: " + name);
             }
         } catch (Exception e) {
-
+            LOGGER.log(Level.SEVERE, "Error in checkIcon", e);
         }
     }
 
-    private static void sendIcon(String name, BufferedImage icon) {
-        Runnable run = new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    HttpURLConnection conn = (HttpURLConnection) new URL(FoodService.API_ENDPOINT + "icon").openConnection();
-                    conn.setRequestMethod("POST");
-                    conn.setRequestProperty("User-Agent", "H&H Client");
-                    conn.setRequestProperty("Content-Type", "application/json;charset=UTF-8");
-                    conn.setDoOutput(true);
+    private static void queueIconUpload(String name, String resourceName, BufferedImage icon) {
+        uploadQueue.add(new IconUpload(name, resourceName, icon));
+    }
 
-                    ByteArrayOutputStream os = new ByteArrayOutputStream();
-                    ImageIO.write(icon, "png", os);
-                    os.flush();
-
-                    JSONObject obj = new JSONObject();
-                    obj.put("name", name);
-                    obj.put("icon", new String(Base64.getEncoder().encode(os.toByteArray()), StandardCharsets.UTF_8));
-
-                    DataOutputStream dos = new DataOutputStream(conn.getOutputStream());
-                    dos.write(obj.toString().getBytes(StandardCharsets.UTF_8));
-                    dos.close();
-                    System.out.println("Sent a new food icon with a response code: " + conn.getResponseCode());
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
+    private static void processUploadQueue() {
+        IconUpload upload;
+        while ((upload = uploadQueue.poll()) != null) {
+            try {
+                sendIcon(upload.name, upload.resourceName, upload.icon);
+            } catch (Exception e) {
+                LOGGER.log(Level.SEVERE, "Failed to upload icon for: " + upload.name, e);
             }
-        };
-        FoodService.scheduler.execute(run);
+        }
+    }
+
+    private static void sendIcon(String name, String resourceName, BufferedImage icon) {
+        try {
+            // Create connection
+            HttpURLConnection conn = (HttpURLConnection) new URL(FoodService.API_ENDPOINT + "uploadfromclient.php").openConnection();
+            conn.setRequestMethod("POST");
+            conn.setRequestProperty("User-Agent", "H&H Client");
+            conn.setRequestProperty("Content-Type", "application/json;charset=UTF-8");
+            conn.setDoOutput(true);
+
+            // Convert image to Base64
+            ByteArrayOutputStream imageBytes = new ByteArrayOutputStream();
+            ImageIO.write(icon, "png", imageBytes);
+            imageBytes.flush();
+            String base64Image = Base64.getEncoder().encodeToString(imageBytes.toByteArray());
+
+            // Create JSON payload
+            JSONObject payload = new JSONObject();
+            payload.put("name", name);
+            payload.put("resourceName", resourceName);
+            payload.put("icon", base64Image);
+            payload.put("fileName", resourceName + ".png");
+
+            // Send data
+            try (DataOutputStream dos = new DataOutputStream(conn.getOutputStream())) {
+                dos.write(payload.toString().getBytes(StandardCharsets.UTF_8));
+            }
+
+            // Get response
+            int responseCode = conn.getResponseCode();
+            LOGGER.info("Sent icon for " + name + " - Response code: " + responseCode);
+
+        } catch (IOException e) {
+            LOGGER.log(Level.SEVERE, "Error sending icon for: " + name, e);
+        }
+    }
+
+    private static final class IconUpload {
+        public final String name;
+        public final String resourceName;
+        public final BufferedImage icon;
+
+        public IconUpload(String name, String resourceName, BufferedImage icon) {
+            this.name = name;
+            this.resourceName = resourceName;
+            this.icon = icon;
+        }
     }
 }
+// C
