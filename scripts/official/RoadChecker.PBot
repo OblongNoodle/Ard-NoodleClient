@@ -1,0 +1,436 @@
+const PBotAPI = Java.type('haven.purus.pbot.PBotAPI');
+const ui = PBotAPI.ui();
+const PBotUtils = Java.type('haven.purus.pbot.PBotUtils');
+const PBotCharacterAPI = Java.type('haven.purus.pbot.PBotCharacterAPI');
+const PBotGobAPI = Java.type('haven.purus.pbot.PBotGobAPI');
+const PBotWindowAPI = Java.type('haven.purus.pbot.PBotWindowAPI');
+const BufferedWriter = Java.type('java.io.BufferedWriter');
+const OutputStreamWriter = Java.type('java.io.OutputStreamWriter');
+const Files = Java.type('java.nio.file.Files');
+const Paths = Java.type('java.nio.file.Paths');
+const StandardCharsets = Java.type('java.nio.charset.StandardCharsets');
+const window = PBotUtils.PBotWindow(ui, "Road Scout Bot", 525, 290, ScriptID);
+
+// Constants - keep successful configuration
+const WAIT_TIME = 1 * 60 * 1000;
+const CONFIG_FILE = "roadscout_accounts.json";
+
+// Global variables
+let stop = false;
+const accountConfigs = [];
+
+// Storage Functions
+const saveConfigs = () => {
+    try {
+        const FileWriter = Java.type('java.io.FileWriter');
+        const configJson = JSON.stringify(accountConfigs, null, 2);
+        const writer = new FileWriter(CONFIG_FILE);
+        writer.write(configJson);
+        writer.close();
+        PBotUtils.sysMsg(ui, "Configurations saved");
+    } catch (e) {
+        PBotUtils.sysMsg(ui, "Error saving configurations: " + e);
+    }
+};
+
+const loadConfigs = () => {
+    try {
+        if (Files.exists(Paths.get(CONFIG_FILE))) {
+            const bytes = Files.readAllBytes(Paths.get(CONFIG_FILE));
+            let data = new java.lang.String(bytes, StandardCharsets.UTF_8);
+
+            // Clean up the string
+            data = data.trim();
+            PBotUtils.sysMsg(ui, "Attempting to parse: " + data);
+
+            try {
+                let loaded = null;
+                try {
+                    loaded = JSON.parse(data);
+                } catch (e) {
+                    const match = data.match(/\{\s*"account"[\s\S]*\}/);
+                    if (match) {
+                        loaded = JSON.parse(match[0]);
+                        loaded = [loaded];
+                    }
+                }
+
+                if (loaded) {
+                    accountConfigs.length = 0;
+                    if (Array.isArray(loaded)) {
+                        accountConfigs.push(...loaded);
+                    } else {
+                        accountConfigs.push(loaded);
+                    }
+                    PBotUtils.sysMsg(ui, `Loaded ${accountConfigs.length} account configurations`);
+                }
+            } catch (parseError) {
+                PBotUtils.sysMsg(ui, "Error parsing JSON: " + parseError);
+                PBotUtils.sysMsg(ui, "Data was: " + data);
+            }
+        }
+    } catch (e) {
+        PBotUtils.sysMsg(ui, "Error loading configurations: " + e);
+    }
+};
+
+// UI Elements
+window.addLabel("Account Setup", 10, 10);
+window.addLabel("Account Name:", 10, 30);
+const accountInput = window.addTextEntry(200, "Enter account name", 10, 50);
+
+window.addLabel("Password:", 10, 80);
+const passwordInput = window.addTextEntry(200, "Enter password", 10, 100);
+
+window.addLabel("Character 1:", 10, 130);
+const char1Input = window.addTextEntry(200, "Enter first character", 10, 150);
+
+window.addLabel("Character 2 (optional):", 10, 180);
+const char2Input = window.addTextEntry(200, "Enter second character", 10, 200);
+
+window.addLabel("Character 3 (optional):", 10, 230);
+const char3Input = window.addTextEntry(200, "Enter third character", 10, 250);
+
+window.addLabel("GFX Value to Search For:", 10, 340);
+const gfxInput = window.addTextEntry(200, "Enter gfx value (e.g., gfx/terobjs/trees/stonepine)", 10, 360);
+
+window.addLabel("Discord Ping (optional) - Must use DevMode <@&RoleID>", 10, 390);
+const pingInput = window.addTextEntry(200, "Enter ping (e.g. @hunter)", 10, 410);
+
+window.addLabel("Discord Webhook URL:", 10, 430);
+const webhookInput = window.addTextEntry(200, "Enter Discord webhook URL", 10, 450);
+
+window.addButton("btnAdd", "Add Account", 110, 10, 280);
+window.addButton("btnClear", "Clear All", 110, 130, 280);
+window.addButton("btnShowAccounts", "View Accounts", 110, 10, 310);
+window.addButton("btnStart", "Start", 80, 10, 500);
+window.addButton("btnStop", "Stop", 80, 130, 500);
+
+// Load saved configurations at startup
+loadConfigs();
+
+// Utility functions
+const sendToDiscord = (message) => {
+    try {
+        const webhookUrl = webhookInput.getText().trim();
+        if (!webhookUrl) {
+            PBotUtils.sysMsg(ui, "No Discord webhook URL configured");
+            return;
+        }
+
+        const url = new java.net.URL(webhookUrl);
+        const connection = url.openConnection();
+        connection.setRequestMethod("POST");
+        connection.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
+        connection.setRequestProperty("User-Agent", "Road Scout Bot (HavenBot, 1.0)");
+        connection.setDoOutput(true);
+
+        const writer = new BufferedWriter(new OutputStreamWriter(connection.getOutputStream(), "UTF-8"));
+        writer.write(JSON.stringify({ content: message }));
+        writer.flush();
+        writer.close();
+
+        const responseCode = connection.getResponseCode();
+        if (responseCode != 204) {
+            PBotUtils.sysMsg(ui, "Discord webhook error: " + responseCode);
+        }
+    } catch (e) {
+        PBotUtils.sysMsg(ui, "Discord error: " + e);
+    }
+};
+
+function shouldStop() {
+    if (stop) PBotUtils.sysMsg(ui, "Stop!");
+    if (window.closed()) PBotUtils.sysMsg(ui, "Window closed!");
+    return stop || window.closed();
+}
+
+const moveAwayFromMilestone = () => {
+    const rng = new java.util.Random();
+    const direction = rng.nextInt(4);
+    let moveX = 0;
+    let moveY = 0;
+
+    switch (direction) {
+        case 0: moveY = -22; break;
+        case 1: moveY = 22; break;
+        case 2: moveX = 22; break;
+        case 3: moveX = -22; break;
+    }
+
+    const playerPos = ui.gui.map.player().rc;
+    const targetPos = playerPos.add(moveX, moveY);
+
+    PBotUtils.sysMsg(ui, `Moving away from milestone by X: ${moveX}, Y: ${moveY}`);
+
+    ui.gui.map.clearmovequeue();
+    ui.gui.map.queuemove(targetPos);
+
+    do {
+        PBotUtils.sleep(250);
+        if (shouldStop()) return;
+    } while (ui.gui.map.player().getv() !== 0);
+};
+
+const scoutRoad = async () => {
+    try {
+        let attempts = 0;
+        const maxAttempts = 7;
+
+        while (attempts < maxAttempts && !shouldStop()) {
+            const milestone = PBotGobAPI.findGobByNames(ui, "gfx/terobjs/road/milestone-wood-e");
+            if (!milestone) {
+                PBotUtils.sysMsg(ui, "No milestone found, attempt " + (attempts + 1));
+                attempts++;
+                PBotUtils.sleep(1000);
+                continue;
+            }
+            PBotUtils.sysMsg(ui, "Found milestone");
+
+            moveAwayFromMilestone();
+            PBotUtils.sleep(2000);
+
+            const milestoneAfterMove = PBotGobAPI.findGobByNames(ui, "gfx/terobjs/road/milestone-wood-e");
+            if (!milestoneAfterMove) {
+                PBotUtils.sysMsg(ui, "Lost sight of milestone after moving");
+                attempts++;
+                continue;
+            }
+
+            if (!PBotUtils.pfRightClick(ui, milestoneAfterMove, 0)) {
+                PBotUtils.sysMsg(ui, "Failed to click milestone");
+                attempts++;
+                continue;
+            }
+
+            let moveWaitAttempts = 0;
+            while (PBotUtils.player(ui).isMoving() && moveWaitAttempts < 20) {
+                PBotUtils.sleep(100);
+                moveWaitAttempts++;
+            }
+
+            if (moveWaitAttempts >= 20) {
+                PBotUtils.sysMsg(ui, "Movement timeout");
+                attempts++;
+                continue;
+            }
+
+            PBotUtils.sleep(1000);
+            const milestoneWindow = PBotWindowAPI.waitForWindow(ui, "Milestone", 2000);
+            if (!milestoneWindow) {
+                PBotUtils.sysMsg(ui, "Milestone window didn't appear");
+                attempts++;
+                continue;
+            }
+
+            const buttonType = Java.type("haven.Button");
+            let travelButton = null;
+
+            for (let wdg = milestoneWindow.lchild; wdg != null; wdg = wdg.prev) {
+                if (wdg instanceof buttonType) {
+                    const buttonText = wdg.text ? (wdg.text.text ? wdg.text.text.toString().toLowerCase() : "") :
+                        (wdg.origtext ? wdg.origtext.toString().toLowerCase() : "");
+
+                    if (buttonText === "travel") {
+                        travelButton = wdg;
+                        break;
+                    }
+                }
+            }
+
+            if (!travelButton) {
+                PBotUtils.sysMsg(ui, "Travel button not found");
+                attempts++;
+                continue;
+            }
+
+            travelButton.wdgmsg("activate");
+            PBotUtils.sleep(7000);
+
+            const targetGfxValue = gfxInput.getText().trim();
+            PBotUtils.sysMsg(ui, `Searching for objects with gfx value: ${targetGfxValue}`);
+            const allGobs = PBotGobAPI.getAllGobs(ui);
+            let foundObjects = 0;
+
+            for (let i = 0; i < allGobs.size(); i++) {
+                try {
+                    const pbotGob = allGobs.get(i);
+                    const gob = pbotGob.gob;
+                    const res = gob.getres();
+
+                    if (res && res.name && res.name.includes(targetGfxValue)) {
+                        const pingText = pingInput.getText().trim();
+                        const pingPrefix = pingText ? `${pingText} ` : '';
+                        const message = `${pingPrefix}🎯 TARGET LOCATED: ${res.name}`;
+
+                        sendToDiscord(message);
+                        foundObjects++;
+                    }
+                } catch (e) {
+                    // Ignore individual gob errors
+                }
+            }
+            PBotUtils.sysMsg(ui, foundObjects > 0 ? `Found ${foundObjects} objects` : "No objects found");
+
+            PBotCharacterAPI.cancelAct(ui);
+            PBotUtils.sleep(2000);
+            return true;
+        }
+
+        if (attempts >= maxAttempts) {
+            PBotUtils.sysMsg(ui, "Failed after max attempts");
+            return false;
+        }
+    } catch (e) {
+        PBotUtils.sysMsg(ui, "Error in scout sequence: " + e);
+        return false;
+    }
+    return false;
+};
+
+const validateInputs = () => {
+    const acc = accountInput.getText().trim();
+    const pass = passwordInput.getText().trim();
+    const chars = [
+        char1Input.getText().trim(),
+        char2Input.getText().trim(),
+        char3Input.getText().trim()
+    ].filter(char => char !== "");
+
+    if (!acc || !pass || chars.length === 0) {
+        PBotUtils.sysMsg(ui, "Please fill in account, password, and at least one character");
+        return false;
+    }
+    return true;
+};
+
+const clearInputs = () => {
+    accountInput.setText("");
+    passwordInput.setText("");
+    char1Input.setText("");
+    char2Input.setText("");
+    char3Input.setText("");
+};
+
+const btnShowAccounts = () => {
+    try {
+        const processBuilder = new java.lang.ProcessBuilder(
+            java.lang.System.getProperty("os.name").toLowerCase().contains("win") ?
+                "notepad.exe" : "xdg-open",
+            CONFIG_FILE
+        );
+        processBuilder.start();
+    } catch (e) {
+        PBotUtils.sysMsg(ui, "Error opening file: " + e);
+    }
+};
+
+const btnAdd = () => {
+    if (validateInputs()) {
+        const newAccount = {
+            account: accountInput.getText().trim(),
+            password: passwordInput.getText().trim(),
+            characters: [
+                char1Input.getText().trim(),
+                char2Input.getText().trim(),
+                char3Input.getText().trim()
+            ].filter(char => char !== "")
+        };
+
+        accountConfigs.push(newAccount);
+        saveConfigs();
+        clearInputs();
+        PBotUtils.sysMsg(ui, `Account added with ${newAccount.characters.length} characters`);
+    }
+};
+
+const btnClear = () => {
+    accountConfigs.length = 0;
+    clearInputs();
+    saveConfigs();
+    PBotUtils.sysMsg(ui, "All accounts cleared");
+};
+
+const btnStart = async () => {
+    try {
+        stop = false;
+
+        if (accountConfigs.length === 0) {
+            PBotUtils.sysMsg(ui, "Please add at least one account configuration");
+            return;
+        }
+
+        sendToDiscord("Road Scout Bot starting...");
+
+        // First run - start from in-game
+        PBotUtils.sysMsg(ui, "Starting first run - logging out to account login...");
+        PBotCharacterAPI.logout(ui);
+        await PBotUtils.sleep(7000);
+
+        while (!shouldStop()) {
+            try {
+                // Process accounts
+                for (const config of accountConfigs) {
+                    if (shouldStop()) break;
+
+                    PBotUtils.sysMsg(ui, `Logging into account: ${config.account}`);
+                    PBotCharacterAPI.loginUserPass(ui, config.account, config.password);
+                    await PBotUtils.sleep(7000);
+
+                    // Verify we reached character select
+                    if (PBotCharacterAPI.isOnCharSelectScreen(ui)) {
+                        // Process each character for this account
+                        for (let i = 0; i < config.characters.length; i++) {
+                            if (shouldStop()) break;
+
+                            const character = config.characters[i];
+                            const isLastCharacter = i === config.characters.length - 1;
+
+                            PBotUtils.sysMsg(ui, `Selecting character: ${character}`);
+                            sendToDiscord(`Logging in as ${character}`);
+
+                            PBotCharacterAPI.loginChar(ui, character);
+                            await PBotUtils.sleep(7000);
+
+                            // Run scout script if successfully logged in
+                            if (ui.gui && ui.gui.map) {
+                                const scoutResult = await scoutRoad();
+                                PBotUtils.sysMsg(ui, `Scout completed for ${character} with result: ${scoutResult}`);
+
+                                // If this is the last character of this account, log out to account login
+                                // Otherwise, log out to character select
+                                if (isLastCharacter) {
+                                    PBotUtils.sysMsg(ui, `Finished with account ${config.account}, logging out to account login...`);
+                                    PBotCharacterAPI.logout(ui);
+                                } else {
+                                    PBotUtils.sysMsg(ui, "Logging out to character select...");
+                                    PBotCharacterAPI.logoutChar(ui);
+                                }
+                                await PBotUtils.sleep(7000);
+                            }
+                        }
+                    }
+                }
+
+                const waitStartTime = new Date();
+                sendToDiscord(`Scout cycle complete. Next cycle will begin at ${new Date(waitStartTime.getTime() + WAIT_TIME).toLocaleTimeString()}`);
+
+                let waitedTime = 0;
+                while (waitedTime < WAIT_TIME && !shouldStop()) {
+                    const remainingMins = Math.ceil((WAIT_TIME - waitedTime) / 60000);
+                    PBotUtils.sysMsg(ui, `Waiting ${remainingMins} minutes until next scout cycle...`);
+                    await PBotUtils.sleep(30000);
+                    waitedTime += 30000;
+                }
+
+            } catch (cycleError) {
+                PBotUtils.sysMsg(ui, `Error during cycle: ${cycleError}`);
+                sendToDiscord(`Error during cycle: ${cycleError}`);
+                await PBotUtils.sleep(30000);
+            }
+        }
+    } catch (e) {
+        sendToDiscord(`**Critical Error**: ${e.toString()}`);
+        PBotUtils.sysMsg(ui, `Critical error: ${e}`);
+    }
+};
