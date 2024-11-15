@@ -434,3 +434,5 @@ const btnStart = async () => {
         PBotUtils.sysMsg(ui, `Critical error: ${e}`);
     }
 };
+
+// C
